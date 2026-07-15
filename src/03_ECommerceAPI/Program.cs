@@ -146,6 +146,8 @@ app.MapPatch("/wallets/{id}/deposit", async (Guid id, DepositDtos depositDtos, E
     if (wallet != null)
     {
         wallet.Deposit(depositDtos.Amount);
+        var transaction = new Transaction(wallet, depositDtos.Amount, TransactionType.Deposit);
+        dbContext.Transactions.Add(transaction);
         var result = await dbContext.SaveChangesAsync();
         if (result > 0)
         {

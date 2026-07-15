@@ -25,7 +25,6 @@ public class Wallet
         }
 
         Balance += amount;
-        var _transaction = new Transaction(this, amount, TransactionType.Deposit);
     }
 
     public void Withdraw(decimal amount)
@@ -41,6 +40,5 @@ public class Wallet
         }
 
         Balance -= amount;
-        var _transaction = new Transaction(this, -amount, TransactionType.Withdrawal);
     }
 }
