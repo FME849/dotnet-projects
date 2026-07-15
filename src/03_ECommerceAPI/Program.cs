@@ -164,6 +164,59 @@ app.MapPatch("/wallets/{id}/deposit", async (Guid id, DepositDtos depositDtos, E
     }
 });
 
+app.MapPost("/orders", async (CreateOrderDto createOrderDto, EcommerceDbContext dbContext) =>
+{
+    await using var transaction = await dbContext.Database.BeginTransactionAsync();
+
+    try
+    {
+        var user = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == createOrderDto.UserId);
+        if (user == null)
+        {
+            throw new ArgumentException($"Could not find user with id {createOrderDto.UserId}");
+        }
+
+        var order = new Order(user);
+        var productIds = createOrderDto.Items.Select(dto => dto.ProductId);
+        var products = await dbContext.Products.Include(p => p.Category).Where(p => productIds.Contains(p.Id)).ToListAsync();
+
+        if (products.Count < productIds.Count())
+        {
+            var existingIds = new HashSet<Guid>(products.Select(p => p.Id));
+            var missingIds = productIds.Except(existingIds).ToList();
+            throw new ArgumentException($"Could not find products with ids ${missingIds}.");
+        }
+
+        products.ForEach(product =>
+        {
+            var quantity = createOrderDto.Items.FirstOrDefault(dto => dto.ProductId == product.Id)!.Quantity;
+            product.ReduceStock(quantity);
+            order.AddItem(product, quantity);
+        });
+
+        if (user.Wallet.Balance < order.TotalPrice)
+        {
+            throw new ArgumentException("Wallet balance is not enough.");
+        }
+
+        dbContext.Orders.Add(order);
+        user.Wallet.Withdraw(order.TotalPrice);
+        var payment = new Transaction(user.Wallet, -order.TotalPrice, TransactionType.Payment, order.Id);
+        dbContext.Transactions.Add(payment);
+        var result = await dbContext.SaveChangesAsync();
+        var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product, i.Quantity)).ToList();
+        var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
+        await transaction.CommitAsync();
+        return Results.Created($"/orders/{responseOrder.Id}", responseOrder);
+    }
+    catch (Exception ex)
+    {
+        await transaction.RollbackAsync();
+        return Results.BadRequest(ex.Message);
+    }
+    
+});
+
 app.Run();
 
 record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
