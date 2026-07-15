@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using _03_EcommerceAPI.Data;
+using _03_EcommerceAPI.DTOs;
+using _03_EcommerceAPI.Models;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +27,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.Use(async (context, next) =>
+{
+    var sw = Stopwatch.StartNew();
+    await next(context);
+    sw.Stop();
+    Console.WriteLine($"Request took {sw.ElapsedMilliseconds} ms");
+});
 
 var summaries = new[]
 {
@@ -43,6 +53,114 @@ app.MapGet("/weatherforecast", () =>
     return forecast;
 })
 .WithName("GetWeatherForecast");
+
+app.MapPost("/categories", async (CreateCategoryDto createCategoryDto, EcommerceDbContext dbContext) =>
+{
+    var category = new Category(createCategoryDto.Name, createCategoryDto.Description);
+    dbContext.Categories.Add(category);
+    var result = await dbContext.SaveChangesAsync();
+    
+    if (result > 0)
+    {
+        return Results.Created($"/categories/{category.Id}", category);
+    }
+    else
+    {
+        return Results.BadRequest("Failed to create category");
+    }
+});
+
+app.MapGet("/categories", async (EcommerceDbContext dbContext) =>
+{
+    var categories = await dbContext.Categories.ToListAsync();
+    return Results.Ok(categories);
+});
+
+app.MapPost("/products", async (CreateProductDto createProductDto, EcommerceDbContext dbContext) =>
+{
+    var category = await dbContext.Categories.FirstOrDefaultAsync(c => c.Id == createProductDto.CategoryId);
+    
+    if (category == null)
+    {
+        return Results.NotFound($"Category not found for id: {createProductDto.CategoryId}");
+    }
+
+    var product = new Product(createProductDto.Name, createProductDto.Description, createProductDto.ImageUrl, createProductDto.Price, createProductDto.Stock, category);
+    dbContext.Products.Add(product);
+    var result = await dbContext.SaveChangesAsync();
+
+    if (result > 0)
+    {
+        return Results.Created($"/products/{product.Id}", product);
+    }
+    else
+    {
+        return Results.BadRequest("Failed to create product.");
+    }
+});
+
+app.MapGet("/products", async (EcommerceDbContext dbContext) =>
+{
+    var products = await dbContext.Products.Include(p => p.Category).ToListAsync();
+    return Results.Ok(products);
+});
+
+app.MapPost("/users", async (CreateUserDto createUserDto, EcommerceDbContext dbContext) =>
+{
+    var isExist = await dbContext.Users.AnyAsync(u => u.Email == createUserDto.Email);
+    if (isExist)
+    {
+        return Results.BadRequest($"User with email {createUserDto.Email} has already existed.");
+    }
+
+    var user = new User(createUserDto.Name, createUserDto.Email, createUserDto.Password); // Should hash the password 1st, but leaving it as is to keep it simple
+    dbContext.Users.Add(user);
+    var result = await dbContext.SaveChangesAsync();
+
+    if (result > 0)
+    {
+        return Results.Created($"/users/{user.Id}", new ResponseUserDto(user.Id, user.Name, user.Email, user.AvatarUrl, user.Wallet.Balance));
+    }
+    else
+    {
+        return Results.BadRequest("Failed to create user.");
+    }
+});
+
+app.MapGet("/users/{id}", async (Guid id, EcommerceDbContext dbContext) =>
+{
+    var user = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == id);
+    if (user != null)
+    {
+        return Results.Ok(new ResponseUserDto(user.Id, user.Name, user.Email, user.AvatarUrl, user.Wallet.Balance));
+    }
+    else
+    {
+        return Results.NotFound($"Could not found user with id {id}.");
+    }
+});
+
+app.MapPatch("/wallets/{id}/deposit", async (Guid id, DepositDtos depositDtos, EcommerceDbContext dbContext) =>
+{
+    var wallet = await dbContext.Wallets.Include(w => w.User).FirstOrDefaultAsync(w => w.Id == id && w.UserId == depositDtos.UserId);
+    if (wallet != null)
+    {
+        wallet.Deposit(depositDtos.Amount);
+        var result = await dbContext.SaveChangesAsync();
+        if (result > 0)
+        {
+            return Results.NoContent();
+        }
+        else
+        {
+            return Results.BadRequest($"Failed to deposit wallet with id {id}");
+        }
+    }
+    else
+    {
+        return Results.NotFound($"Could not found wallet with id {id} or user id {depositDtos.UserId}.");
+    }
+});
 
 app.Run();
 

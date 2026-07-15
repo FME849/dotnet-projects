@@ -11,7 +11,7 @@ public class Product
     public Guid CategoryId { get; private set; }
     public Category Category { get; private set; } = null!;
 
-    public Product(string name, string description, string? imageUrl, decimal price, int stock, Guid categoryId)
+    public Product(string name, string description, string? imageUrl, decimal price, int stock, Category category)
     {
         Id = Guid.NewGuid();
         Name = name;
@@ -19,7 +19,8 @@ public class Product
         ImageUrl = imageUrl;
         Price = price;
         Stock = stock;
-        CategoryId = categoryId;
+        CategoryId = category.Id;
+        Category = category;
     }
 
     private Product() { } // EF Core
