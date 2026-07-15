@@ -1,0 +1,11 @@
+@rootURL = http://localhost:5083
+
+GET {{rootURL}}/api/todos
+Accept: application/json
+
+###
+
+POST {{rootURL}}/api/todos
+Accept: application/json
+
+###
