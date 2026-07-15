@@ -1,0 +1,10 @@
+[
+  {
+    "ErrorMessage": "Database connection failed: Timeout expired.",
+    "Count": 2
+  },
+  {
+    "ErrorMessage": "File not found: C:\\Logs\\system.log",
+    "Count": 1
+  }
+]
