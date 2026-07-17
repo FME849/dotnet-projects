@@ -188,12 +188,17 @@ app.MapPost("/orders", async (CreateOrderDto createOrderDto, EcommerceDbContext 
             throw new ArgumentException($"Could not find products with ids ${missingIds}.");
         }
 
-        products.ForEach(product =>
+        foreach (var product in products)
         {
             var quantity = createOrderDto.Items.FirstOrDefault(dto => dto.ProductId == product.Id)!.Quantity;
-            product.ReduceStock(quantity);
+            // product.ReduceStock(quantity);
+            var affectedRowCount = await dbContext.Products.Where(p => p.Id == product.Id && p.Stock >= quantity).ExecuteUpdateAsync(setters => setters.SetProperty(p => p.Stock, p => p.Stock - quantity));
+            if (affectedRowCount == 0)
+            {
+                throw new InvalidOperationException($"Insufficient stock for product {product.Name}.");
+            }
             order.AddItem(product, quantity);
-        });
+        }
 
         if (user.Wallet.Balance < order.TotalPrice)
         {
@@ -283,7 +288,7 @@ app.MapPost("/test-concurrency", async (HttpContext httpContext, IHttpClientFact
 
     await Task.WhenAll(tasks);
 
-    var updatedUser = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == user.Id);
+    var updatedUser = await dbContext.Users.AsNoTracking().Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == user.Id);
     var orders = await dbContext.Orders.Select(o => new { o.Id, o.TotalPrice, o.UserId }).Where(o => o.UserId == user.Id).ToListAsync();
     var updatedProduct = await dbContext.Products.Select(p => new { p.Id, p.Name, p.Stock }).FirstOrDefaultAsync(p => p.Id == product.Id);
 
