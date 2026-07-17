@@ -10,6 +10,7 @@ public class Product
     public int Stock { get; private set; }
     public Guid CategoryId { get; private set; }
     public Category Category { get; private set; } = null!;
+    public uint Version { get; private set; } // For optimistic concurrency control
 
     public Product(string name, string description, string? imageUrl, decimal price, int stock, Category category)
     {

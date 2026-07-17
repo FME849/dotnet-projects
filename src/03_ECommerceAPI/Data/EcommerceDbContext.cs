@@ -24,5 +24,9 @@ public class EcommerceDbContext : DbContext
             .WithOne(e => e.User)
             .HasForeignKey<Wallet>(e => e.UserId)
             .IsRequired();
+
+        modelBuilder.Entity<Product>()
+            .Property(p => p.Version)
+            .IsRowVersion(); // Configure Version as a concurrency token
     }
 }

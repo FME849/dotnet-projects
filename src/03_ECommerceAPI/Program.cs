@@ -167,60 +167,71 @@ app.MapPatch("/wallets/{id}/deposit", async (Guid id, DepositDtos depositDtos, E
 
 app.MapPost("/orders", async (CreateOrderDto createOrderDto, EcommerceDbContext dbContext) =>
 {
-    await using var transaction = await dbContext.Database.BeginTransactionAsync();
+    int maxRetryAttempts = 3;
+    int retryCount = 0;
 
-    try
+    while (true)
     {
-        var user = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == createOrderDto.UserId);
-        if (user == null)
-        {
-            throw new ArgumentException($"Could not find user with id {createOrderDto.UserId}");
-        }
+        await using var transaction = await dbContext.Database.BeginTransactionAsync();
 
-        var order = new Order(user);
-        var productIds = createOrderDto.Items.Select(dto => dto.ProductId);
-        var products = await dbContext.Products.Include(p => p.Category).Where(p => productIds.Contains(p.Id)).ToListAsync();
-
-        if (products.Count < productIds.Count())
+        try
         {
-            var existingIds = new HashSet<Guid>(products.Select(p => p.Id));
-            var missingIds = productIds.Except(existingIds).ToList();
-            throw new ArgumentException($"Could not find products with ids ${missingIds}.");
-        }
-
-        foreach (var product in products)
-        {
-            var quantity = createOrderDto.Items.FirstOrDefault(dto => dto.ProductId == product.Id)!.Quantity;
-            // product.ReduceStock(quantity);
-            var affectedRowCount = await dbContext.Products.Where(p => p.Id == product.Id && p.Stock >= quantity).ExecuteUpdateAsync(setters => setters.SetProperty(p => p.Stock, p => p.Stock - quantity));
-            if (affectedRowCount == 0)
+            var user = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == createOrderDto.UserId);
+            if (user == null)
             {
-                throw new InvalidOperationException($"Insufficient stock for product {product.Name}.");
+                throw new ArgumentException($"Could not find user with id {createOrderDto.UserId}");
             }
-            order.AddItem(product, quantity);
-        }
 
-        if (user.Wallet.Balance < order.TotalPrice)
+            var order = new Order(user);
+            var productIds = createOrderDto.Items.Select(dto => dto.ProductId);
+            var products = await dbContext.Products.Include(p => p.Category).Where(p => productIds.Contains(p.Id)).ToListAsync();
+
+            if (products.Count < productIds.Count())
+            {
+                var existingIds = new HashSet<Guid>(products.Select(p => p.Id));
+                var missingIds = productIds.Except(existingIds).ToList();
+                throw new ArgumentException($"Could not find products with ids ${missingIds}.");
+            }
+
+            foreach (var product in products)
+            {
+                var quantity = createOrderDto.Items.FirstOrDefault(dto => dto.ProductId == product.Id)!.Quantity;
+                product.ReduceStock(quantity);
+                order.AddItem(product, quantity);
+            }
+
+            if (user.Wallet.Balance < order.TotalPrice)
+            {
+                throw new ArgumentException("Wallet balance is not enough.");
+            }
+
+            dbContext.Orders.Add(order);
+            user.Wallet.Withdraw(order.TotalPrice);
+            var payment = new Transaction(user.Wallet, -order.TotalPrice, TransactionType.Payment, order.Id);
+            dbContext.Transactions.Add(payment);
+            var result = await dbContext.SaveChangesAsync();
+            var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product.Id, i.Product.Name, i.Product.Price, i.Quantity)).ToList();
+            var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
+            await transaction.CommitAsync();
+            return Results.Created($"/orders/{responseOrder.Id}", responseOrder);
+        }
+        catch (DbUpdateConcurrencyException)
         {
-            throw new ArgumentException("Wallet balance is not enough.");
+            await transaction.RollbackAsync();
+            retryCount++;
+            if (retryCount >= maxRetryAttempts)
+            {
+                return Results.Conflict("Concurrency conflict occurred. Please try again later.");
+            }
+
+            await Task.Delay(Random.Shared.Next(10, 50)); // Random delay to reduce contention
         }
-
-        dbContext.Orders.Add(order);
-        user.Wallet.Withdraw(order.TotalPrice);
-        var payment = new Transaction(user.Wallet, -order.TotalPrice, TransactionType.Payment, order.Id);
-        dbContext.Transactions.Add(payment);
-        var result = await dbContext.SaveChangesAsync();
-        var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product.Id, i.Product.Name, i.Product.Price, i.Quantity)).ToList();
-        var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
-        await transaction.CommitAsync();
-        return Results.Created($"/orders/{responseOrder.Id}", responseOrder);
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            return Results.BadRequest(ex.Message);
+        }
     }
-    catch (Exception ex)
-    {
-        await transaction.RollbackAsync();
-        return Results.BadRequest(ex.Message);
-    }
-
 });
 
 app.MapPost("/test-concurrency", async (HttpContext httpContext, IHttpClientFactory httpClientFactory, EcommerceDbContext dbContext) =>
