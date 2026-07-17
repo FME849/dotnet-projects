@@ -17,6 +17,7 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
 });
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
@@ -42,7 +43,7 @@ var summaries = new[]
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
@@ -59,7 +60,7 @@ app.MapPost("/categories", async (CreateCategoryDto createCategoryDto, Ecommerce
     var category = new Category(createCategoryDto.Name, createCategoryDto.Description);
     dbContext.Categories.Add(category);
     var result = await dbContext.SaveChangesAsync();
-    
+
     if (result > 0)
     {
         return Results.Created($"/categories/{category.Id}", category);
@@ -79,7 +80,7 @@ app.MapGet("/categories", async (EcommerceDbContext dbContext) =>
 app.MapPost("/products", async (CreateProductDto createProductDto, EcommerceDbContext dbContext) =>
 {
     var category = await dbContext.Categories.FirstOrDefaultAsync(c => c.Id == createProductDto.CategoryId);
-    
+
     if (category == null)
     {
         return Results.NotFound($"Category not found for id: {createProductDto.CategoryId}");
@@ -204,7 +205,7 @@ app.MapPost("/orders", async (CreateOrderDto createOrderDto, EcommerceDbContext 
         var payment = new Transaction(user.Wallet, -order.TotalPrice, TransactionType.Payment, order.Id);
         dbContext.Transactions.Add(payment);
         var result = await dbContext.SaveChangesAsync();
-        var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product, i.Quantity)).ToList();
+        var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product.Id, i.Product.Name, i.Product.Price, i.Quantity)).ToList();
         var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
         await transaction.CommitAsync();
         return Results.Created($"/orders/{responseOrder.Id}", responseOrder);
@@ -214,7 +215,84 @@ app.MapPost("/orders", async (CreateOrderDto createOrderDto, EcommerceDbContext 
         await transaction.RollbackAsync();
         return Results.BadRequest(ex.Message);
     }
-    
+
+});
+
+app.MapPost("/test-concurrency", async (HttpContext httpContext, IHttpClientFactory httpClientFactory, EcommerceDbContext dbContext) =>
+{
+    const string email = "testuser@example.com";
+
+    var user = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Email == email);
+    if (user == null)
+    {
+        user = new User("Test User", email, "password");
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+    }
+    else
+    {
+        if (user.Wallet.Balance > 0)
+        {
+            user.Wallet.Withdraw(user.Wallet.Balance);
+        }
+        user.Wallet.Deposit(10000);
+        await dbContext.SaveChangesAsync();
+    }
+
+    const string productName = "Test Product";
+    var product = await dbContext.Products.Include(p => p.Category).FirstOrDefaultAsync(p => p.Name == productName);
+    if (product == null)
+    {
+        var category = new Category("Test Category", "This is a test category.");
+        dbContext.Categories.Add(category);
+        await dbContext.SaveChangesAsync();
+
+        product = new Product(productName, "This is a test product.", null, 100u, 1, category);
+        dbContext.Products.Add(product);
+        await dbContext.SaveChangesAsync();
+    }
+    else
+    {
+        product.Restock(1);
+        await dbContext.SaveChangesAsync();
+    }
+
+    var existingOrders = await dbContext.Orders.Where(o => o.UserId == user.Id).ToListAsync();
+    dbContext.Orders.RemoveRange(existingOrders);
+
+    var existingTransactions = await dbContext.Transactions.Where(t => t.WalletId == user.Wallet.Id).ToListAsync();
+    dbContext.Transactions.RemoveRange(existingTransactions);
+    await dbContext.SaveChangesAsync();
+
+    var client = httpClientFactory.CreateClient();
+    var reqUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}/orders";
+
+    var tasks = Enumerable.Range(1, 10).Select(async _ =>
+    {
+        try
+        {
+            var result = await client.PostAsJsonAsync(reqUrl, new CreateOrderDto(user.Id, new List<CreateOrderItemDto> { new CreateOrderItemDto(product.Id, 1) }));
+            var responseBody = await result.Content.ReadAsStringAsync();
+            Console.WriteLine($"Status: {result.StatusCode} - Body: {responseBody}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    });
+
+    await Task.WhenAll(tasks);
+
+    var updatedUser = await dbContext.Users.Include(u => u.Wallet).FirstOrDefaultAsync(u => u.Id == user.Id);
+    var orders = await dbContext.Orders.Select(o => new { o.Id, o.TotalPrice, o.UserId }).Where(o => o.UserId == user.Id).ToListAsync();
+    var updatedProduct = await dbContext.Products.Select(p => new { p.Id, p.Name, p.Stock }).FirstOrDefaultAsync(p => p.Id == product.Id);
+
+    return Results.Ok(new
+    {
+        User = new { Id = updatedUser!.Id, Name = updatedUser.Name, Balance = updatedUser.Wallet.Balance },
+        Orders = orders,
+        Product = updatedProduct,
+    });
 });
 
 app.Run();

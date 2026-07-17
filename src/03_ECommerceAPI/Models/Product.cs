@@ -39,4 +39,14 @@ public class Product
 
         Stock -= quantity;
     }
+
+    public void Restock(int quantity)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentException("Quantity must be greater than 0.");
+        }
+
+        Stock += quantity;
+    }
 }

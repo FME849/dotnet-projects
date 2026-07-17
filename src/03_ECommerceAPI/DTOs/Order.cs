@@ -6,6 +6,6 @@ public record CreateOrderDto(Guid UserId, List<CreateOrderItemDto> Items);
 
 public record CreateOrderItemDto(Guid ProductId, int Quantity);
 
-public record ResponseOrderDto(Guid Id, decimal TotalPrice, List<ResponseOrderItemDto>Items);
+public record ResponseOrderDto(Guid Id, decimal TotalPrice, List<ResponseOrderItemDto> Items);
 
-public record ResponseOrderItemDto(Product product, int Quantity);
+public record ResponseOrderItemDto(Guid ProductId, string ProductName, decimal ProductPrice, int Quantity);
