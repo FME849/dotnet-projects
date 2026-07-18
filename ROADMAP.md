@@ -33,30 +33,41 @@ Tài liệu này lưu trữ lộ trình học C# Backend thông qua 4 dự án n
     *   DI Lifetime: `Transient`, `Scoped`, `Singleton`.
     *   Cấu trúc của HTTP Pipeline và Middleware.
 
-### 🗄️ Dự án 3: E-Commerce Catalog & Orders (Database & ORM)
-*   **Mục tiêu chính:** Kết nối với Database thực tế thông qua ORM chuẩn của .NET: **Entity Framework Core (EF Core)**. Học cách thiết kế DB quan hệ và xử lý migrations.
+### 🗄️ Dự án 3: E-Commerce Catalog & Orders (Database & ORM & Concurrency & Deploy)
+*   **Mục tiêu chính:** Kết nối với Database thực tế qua **EF Core**, giải quyết vấn đề tranh chấp dữ liệu đồng thời (**Concurrency Control**), tái cấu trúc dự án chuẩn nghiệp vụ (**Service Layer** & **Global Exception**), và triển khai **CI/CD** lên **Azure**.
 *   **Yêu cầu tính năng:**
-    *   Thiết kế database gồm 3 bảng quan hệ: `Product` (Sản phẩm), `Category` (Danh mục - 1-n với Product), và `Order` + `OrderItem` (Đơn hàng - n-n giữa Product và Order).
-    *   Sử dụng SQLite cho gọn nhẹ, dễ cài đặt.
-    *   Tạo API CRUD cho Product/Category và API tạo Order (kèm tính toán tổng tiền).
-    *   Sử dụng migrations để quản lý phiên bản database.
+    *   Thiết kế database gồm các bảng: `Product`, `Category`, `User`, `Wallet`, `Order`, `OrderItem`, `Transaction` (quan hệ 1-n, 1-1, n-n).
+    *   Sử dụng **PostgreSQL** chạy trong Docker container làm database chính.
+    *   Xây dựng API CRUD cho Product/Category và API tạo Order bọc trong ACID Transaction.
+    *   Tái hiện lỗi Race Condition/Over-selling và giải quyết bằng **Optimistic Concurrency Control (OCC)** sử dụng cột ẩn hệ thống `xmin` của Postgres kết hợp **Retry với Jitter (10-50ms)**.
+    *   Tái cấu trúc: Tách API Endpoints thành các Extension Methods, áp dụng **Service Layer** (`IOrderService`), và viết **Custom Middleware** xử lý lỗi tập trung.
+    *   **CI/CD & Cloud (Nâng cao):** 
+        *   Tạo GitHub Actions CI chạy build, linter (`dotnet format`) và tests.
+        *   Tự động build Docker Image đẩy lên **Azure Container Registry (ACR)** và deploy lên **Azure App Service**.
+        *   Sử dụng **Azure Database for PostgreSQL (Flexible Server)** và quản lý cấu hình bảo mật bằng **Azure Key Vault**.
 *   **Kiến thức cần đạt:**
-    *   EF Core DbContext, DbSet.
-    *   Cấu hình quan hệ: One-to-Many, Many-to-Many qua Fluent API hoặc Data Annotations.
-    *   LINQ-to-Entities (cách EF Core chuyển code C# thành câu lệnh SQL).
-    *   Eager Loading (`Include`), Lazy Loading, và Explicit Loading.
+    *   EF Core DbContext, DbSet, Migrations.
+    *   Đóng gói logic nghiệp vụ vào Entity (Rich Domain Model).
+    *   Giải quyết Race Condition (Khóa lạc quan OCC / Khóa bi quan).
+    *   Tư duy thiết kế Layered Architecture (API Layer - Service Layer - Data Layer).
+    *   Thiết lập GitHub Actions CI/CD Pipeline và triển khai tài nguyên cơ bản trên Microsoft Azure.
 
-### ⚡ Dự án 4: Real-time Price Monitor (Caching, Worker & WebSockets)
-*   **Mục tiêu chính:** Làm quen với các công nghệ tối ưu hóa hiệu năng và giao tiếp thời gian thực: **Redis Caching**, **SignalR (WebSockets)**, và **Hosted Services** (Background Worker).
+### ⚡ Dự án 4: Real-time Price Monitor (Caching, Worker, WebSockets & Azure Integration)
+*   **Mục tiêu chính:** Làm quen với các công nghệ tối ưu hóa hiệu năng và giao tiếp thời gian thực: **Redis Caching**, **SignalR (WebSockets)**, **Hosted Services** (Background Worker) và tích hợp các dịch vụ Cloud chuyên dụng của Azure.
 *   **Yêu cầu tính năng:**
-    *   Tạo một Background Worker (`IHostedService` hoặc `BackgroundService`) chạy ngầm, cứ mỗi 3 giây sẽ sinh ra giá giả lập của các đồng Coin (BTC, ETH, SOL).
-    *   Mỗi khi có giá mới, worker ghi đè giá mới nhất này vào **Redis Cache** để lưu trữ tạm thời tốc độ cao.
-    *   Đồng thời, worker phát (broadcast) giá mới này tới toàn bộ Client đang kết nối thông qua **SignalR Hub**.
-    *   Xây dựng 1 trang HTML/JS đơn giản (Frontend) kết nối vào SignalR để hiển thị biểu đồ hoặc bảng giá cập nhật real-time không cần reload.
+    *   Tạo một Background Worker (`BackgroundService`) chạy ngầm giả lập sinh giá Coin mới (BTC, ETH, SOL) sau mỗi 3 giây.
+    *   Ghi đè giá mới nhất này vào **Redis Cache** tốc độ cao.
+    *   Broadcast giá mới thời gian thực tới toàn bộ client kết nối qua **SignalR Hub**.
+    *   Xây dựng Frontend HTML/JS kết nối SignalR hiển thị bảng giá cập nhật không reload.
+    *   **CI/CD & Cloud (Nâng cao):**
+        *   Chuyển đổi Redis local sang **Azure Cache for Redis**.
+        *   Tích hợp **Azure SignalR Service** làm Backplane để hỗ trợ scale-out (chạy nhiều instance API mà không mất kết nối WebSocket).
+        *   Triển khai Background Worker lên **Azure Container Apps** để chạy độc lập.
 *   **Kiến thức cần đạt:**
     *   `BackgroundService` trong .NET.
     *   Sử dụng Redis với `IDistributedCache` hoặc `StackExchange.Redis`.
-    *   ASP.NET Core SignalR (Hubs, Clients, Connections).
+    *   ASP.NET Core SignalR (Hubs, Clients, Connections) và tích hợp Azure SignalR SDK.
+    *   Kiến trúc ứng dụng phân tán trên Cloud.
 
 ---
 
