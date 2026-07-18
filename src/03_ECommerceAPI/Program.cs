@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using _03_EcommerceAPI.Data;
 using _03_EcommerceAPI.Endpoints;
+using _03_EcommerceAPI.Middlewares;
 using _03_EcommerceAPI.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -19,6 +20,8 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
 });
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
 
@@ -29,6 +32,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
     var sw = Stopwatch.StartNew();

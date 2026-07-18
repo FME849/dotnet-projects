@@ -16,21 +16,10 @@ public static class OrderEndpoints
 
     private static async Task<IResult> CreateOrder(CreateOrderDto createOrderDto, IOrderService orderService)
     {
-        try
-        {
-            var order = await orderService.CreateOrderAsync(createOrderDto.UserId, createOrderDto.Items);
-            var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product.Id, i.Product.Name, i.Product.Price, i.Quantity)).ToList();
-            var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
-            return Results.Created($"/orders/{order.Id}", responseOrder);
-        }
-        catch (DbUpdateConcurrencyException ex)
-        {
-            return Results.Conflict(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return Results.BadRequest(ex.Message);
-        }
+        var order = await orderService.CreateOrderAsync(createOrderDto.UserId, createOrderDto.Items);
+        var responseOrderItems = order.OrderItems.Select(i => new ResponseOrderItemDto(i.Product.Id, i.Product.Name, i.Product.Price, i.Quantity)).ToList();
+        var responseOrder = new ResponseOrderDto(order.Id, order.TotalPrice, responseOrderItems);
+        return Results.Created($"/orders/{order.Id}", responseOrder);
     }
 
     private static async Task<IResult> TestConcurrency(HttpContext httpContext, IHttpClientFactory httpClientFactory, EcommerceDbContext dbContext)
