@@ -1,8 +1,7 @@
 using System.Diagnostics;
 using _03_EcommerceAPI.Data;
-using _03_EcommerceAPI.DTOs;
 using _03_EcommerceAPI.Endpoints;
-using _03_EcommerceAPI.Models;
+using _03_EcommerceAPI.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +18,7 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
     options.UseNpgsql(connectionString);
 });
 builder.Services.AddHttpClient();
+builder.Services.AddScoped<IOrderService, OrderService>();
 
 var app = builder.Build();
 
